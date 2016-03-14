@@ -3,7 +3,6 @@
 /**
  * @file
  */
-
 define('CUSTOM_CSS_PATH', 'public://custom_css');
 
 /**
@@ -11,13 +10,13 @@ define('CUSTOM_CSS_PATH', 'public://custom_css');
  */
 function dimpact_custom_css_menu() {
   return array('admin/appearance/css' => array(
-    'title' => t('Custom CSS'),
-    'description' => t('Uploading custom CSS files.'),
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array('dimpact_custom_css_upload'),
-    'access arguments' => array('administer custom css files'),
-    'type' => MENU_NORMAL_ITEM,
-    'file' => 'dimpact_custom_css.admin.inc',
+      'title' => t('Custom CSS'),
+      'description' => t('Uploading custom CSS files.'),
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('dimpact_custom_css_upload'),
+      'access arguments' => array('administer custom css files'),
+      'type' => MENU_NORMAL_ITEM,
+      'file' => 'dimpact_custom_css.admin.inc',
   ));
 }
 
@@ -57,9 +56,11 @@ function dimpact_custom_css_form_alter(&$form, &$form_state, $form_id) {
 function dimpact_custom_css_files() {
   return array(
     'custom_css_screen' => t('CSS Screen'),
-    'custom_css_print'  => t('CSS Print'),
+    'custom_css_screen_2' => t('CSS Screen 2'),
+    'custom_css_screen_content' => t('CSS Screen content'),
+    'custom_css_print' => t('CSS Print'),
     'custom_css_lteie9' => t('CSS LTE IE9'),
-    'custom_css_ltie9'  => t('CSS LT IE9'),
+    'custom_css_ltie9' => t('CSS LT IE9'),
   );
 }
 
@@ -69,4 +70,96 @@ function dimpact_custom_css_files() {
 function _dimpact_custom_css_domainid() {
   global $_domain;
   return $_domain['domain_id'];
+}
+
+function _dimpact_custom_css_get_default_domain_css($key) {
+  // The current CSS should inherit the CSS of the main domain.
+  $default_domain = domain_default_id();
+  $css_data_default_domain = domain_conf_variable_get($default_domain, $key);
+  $filename = FALSE;
+
+  if (isset($css_data_default_domain)) {
+    // file_load cannot be used because of domain protection, just do a query on the database.
+    $file_query = db_select('file_managed', 'fm');
+    $file_query->addField('fm', 'filename');
+    $file_query->condition('fm.fid', $css_data_default_domain['css_fid'], '=');
+    $result = $file_query->execute();
+    $filename = $result->fetchField();
+  }
+
+  return $filename;
+}
+
+/**
+ * Retrieve and return (add/print) the regular CSS files for this domain.
+ * @global type $_domain
+ * @global type $base_url
+ */
+function _dimpact_custom_css_get_regular_css_files() {
+  global $_domain;
+  global $base_url;
+
+  if (domain_conf_variable_get($_domain['domain_id'], 'css_killswitch')) {
+    $cache_key = variable_get('dimpact_custom_css_cache_key', '');
+    foreach (dimpact_custom_css_files() as $key => $title) {
+      $css_data = domain_conf_variable_get($_domain['domain_id'], $key);
+
+      if (isset($css_data) && $css_data['inherit_default'] == TRUE) {
+        $filename = _dimpact_custom_css_get_default_domain_css($key);
+
+        if ($filename && ($key == 'custom_css_screen' || $key == 'custom_css_screen_2' || $key == 'custom_css_screen_content')) {
+          print '<link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $filename . '?' . $cache_key . '" media="screen" />';
+        }
+        if ($filename && $key == 'custom_css_print') {
+          print '<link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $filename . '?' . $cache_key . '" media="print" />';
+        }
+      }
+
+      // Include own uploaded CSS.
+      $file = !is_null($css_data) && array_key_exists('css_fid', $css_data) ? file_load($css_data['css_fid']) : FALSE;
+      if ($file && ($key == 'custom_css_screen' || $key == 'custom_css_screen_2' || $key == 'custom_css_screen_content')) {
+        print '<link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $file->filename . '?' . $cache_key . '" media="screen" />';
+      }
+      if ($file && $key == 'custom_css_print') {
+        print '<link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $file->filename . '?' . $cache_key . '" media="print" />';
+      }
+    }
+  }
+}
+
+/**
+ * Retrieve and return (add/print) the IE specific (LT and LTE) CSS files for this domain.
+ * @global type $_domain
+ * @global type $base_url
+ */
+function _dimpact_custom_css_get_ie_specific_files() {
+  global $_domain;
+  global $base_url;
+
+  if (domain_conf_variable_get($_domain['domain_id'], 'css_killswitch')) {
+    $cache_key = variable_get('dimpact_custom_css_cache_key', '');
+    foreach (dimpact_custom_css_files() as $key => $title) {
+      $css_data = domain_conf_variable_get($_domain['domain_id'], $key);
+
+      if (isset($css_data) && $css_data['inherit_default'] == TRUE) {
+        $filename = _dimpact_custom_css_get_default_domain_css($key);
+
+        if ($filename && $key == 'custom_css_lteie9') {
+          print '<!--[if lte IE 9]><link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $filename . '?' . $cache_key . '" media="all" /><![endif]-->';
+        }
+        if ($filename && $key == 'custom_css_ltie9') {
+          print '<!--[if lt IE 9]><link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $filename . '?' . $cache_key . '" media="all" /><![endif]-->';
+        }
+      }
+
+      // Include own uploaded CSS.
+      $file = !is_null($css_data) && array_key_exists('css_fid', $css_data) ? file_load($css_data['css_fid']) : FALSE;
+      if ($file && $key == 'custom_css_lteie9') {
+        print '<!--[if lte IE 9]><link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $file->filename . '?' . $cache_key . '" media="all" /><![endif]-->';
+      }
+      if ($file && $key == 'custom_css_ltie9') {
+        print '<!--[if lt IE 9]><link rel="stylesheet" href="' . $base_url . '/' . conf_path() . '/files/custom_css/' . $file->filename . '?' . $cache_key . '" media="all" /><![endif]-->';
+      }
+    }
+  }
 }

@@ -13,3 +13,19 @@ function dimpact_custom_css_install() {
   $directory = CUSTOM_CSS_PATH;
   file_prepare_directory($directory, FILE_CREATE_DIRECTORY | FILE_MODIFY_PERMISSIONS);
 }
+
+/**
+ * Update domain configuration variables for custom CSS to the new situation that allows inheriting CSS.
+ */
+function dimpact_custom_css_update_7001() {
+  $query = db_query("SELECT domain_id FROM {domain_conf}");
+  foreach ($query as $domain) {
+    $domain_vars = domain_conf_variable_get($domain->domain_id, '', TRUE, TRUE);
+    $files = dimpact_custom_css_files();
+    foreach ($files as $key => $css_name) {
+      $fid = $domain_vars[$key];
+      $data = array('css_fid' => $fid, 'inherit_default' => 0);
+      domain_conf_variable_set($domain->domain_id, $key, $data);
+    }
+  }
+}

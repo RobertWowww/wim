@@ -46,10 +46,16 @@ function dimpact_custom_css_upload_submit(&$form, &$form_state) {
   global $_domain;
 
   foreach (dimpact_custom_css_files() as $key => $title) {
-    _dimpact_custom_css_handle_upload($key);
+    // Handle the upload of the selected CSS file.
+    $fid = _dimpact_custom_css_handle_upload($key);
+    $data = array('css_fid' => $fid, 'inherit_default' => $form_state['values'][$key]['inherit_default']);
+
+    // Save the settings for this domain.
+    domain_conf_variable_set(_dimpact_custom_css_domainid(), $key, $data);
   }
-  domain_conf_variable_set(_dimpact_custom_css_domainid(),'css_killswitch',$form_state['values']['css_killswitch']);
-  domain_conf_variable_set(_dimpact_custom_css_domainid(),'font_killswitch',$form_state['values']['font_killswitch']);
+
+  domain_conf_variable_set(_dimpact_custom_css_domainid(), 'css_killswitch', $form_state['values']['css_killswitch']);
+  domain_conf_variable_set(_dimpact_custom_css_domainid(), 'font_killswitch', $form_state['values']['font_killswitch']);
 
   // Set a cache key. This string is added to the URL to force renewal of browser and Varnish cache.
   variable_set('dimpact_custom_css_cache_key', dechex(REQUEST_TIME));
@@ -61,25 +67,46 @@ function dimpact_custom_css_upload_submit(&$form, &$form_state) {
  * @param string $title
  * @param array $form
  */
-function _dimpact_custom_css_form_elements($source, $title,  &$form) {
-
+function _dimpact_custom_css_form_elements($source, $title, &$form) {
   global $_domain;
 
+  // Load configuration for this domain.
+  $css_data = domain_conf_variable_get($_domain['domain_id'], $source);
+
   $form[$source] = array(
+    '#type' => 'fieldset',
+    '#tree' => TRUE,
+    '#title' => $title,
+  );
+
+  // Check if current domain is not primary domain.
+  if (_dimpact_custom_css_domainid() !== domain_default_id()) {
+    // Subdomains should allow inheritance of CSS from the default domain.
+    $form[$source]['inherit_default'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Inherit CSS from default domain'),
+      '#default_value' => isset($css_data['inherit_default']) ? $css_data['inherit_default'] : 0,
+    );
+  }
+
+  $form[$source][$source] = array(
     '#name' => 'files[' . $source . ']',
-    '#type'   => 'file',
-    '#title'  => $title,
-    '#upload_validators'  => array(
+    '#type' => 'file',
+    '#title' => $title,
+    '#upload_validators' => array(
       'file_validate_extensions' => array(
         'css ttf eot woff',
       ),
     ),
   );
+
   if (domain_conf_variable_get(_dimpact_custom_css_domainid(), $source)) {
-    $file = file_load(domain_conf_variable_get(_dimpact_custom_css_domainid(), $source));
-    $form[$source . '_file'] = array(
-      '#markup' => '<div>' . t('File') . ': ' . $file->filename . '</div>',
-    );
+    $file = file_load($css_data['css_fid']);
+    if ($file) {
+      $form[$source][$source . '_file'] = array(
+        '#markup' => '<div>' . t('File') . ': ' . $file->filename . '</div>',
+      );
+    }
   }
 }
 
@@ -92,27 +119,29 @@ function _dimpact_custom_css_handle_upload($source = NULL) {
   if ($source) {
     if ($file = file_save_upload($source, array('file_validate_extensions' => array('css ttf eot woff')), CUSTOM_CSS_PATH, FILE_EXISTS_REPLACE)) {
       $result = db_select('field_data_domain_file', 'fddf')
-        ->fields('fddf')
-        ->condition('entity_id', $file->fid, '=')
-        ->execute()
-        ->fetchAssoc();
+          ->fields('fddf')
+          ->condition('entity_id', $file->fid, '=')
+          ->execute()
+          ->fetchAssoc();
       if (!$result) {
         db_insert('field_data_domain_file')
-          ->fields(array(
-            'entity_type' => 'file',
-            'bundle' => 'document',
-            'entity_id' => $file->fid,
-            'revision_id' => $file->fid,
-            'domain_file_domain_id' => _dimpact_custom_css_domainid(),
-            'delta' => 0,
-          )
-        )->execute();
+            ->fields(array(
+              'entity_type' => 'file',
+              'bundle' => 'document',
+              'entity_id' => $file->fid,
+              'revision_id' => $file->fid,
+              'domain_file_domain_id' => _dimpact_custom_css_domainid(),
+              'delta' => 0,
+                )
+            )->execute();
       }
       $file->status = 1;
       file_save($file);
 
-      domain_conf_variable_set(_dimpact_custom_css_domainid(), $source, $file->fid);
       variable_set($source, $file->fid);
+
+      // Return the id of the file.
+      return $file->fid;
     }
   }
 }
